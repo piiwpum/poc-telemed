@@ -28,6 +28,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -43,6 +44,8 @@ import androidx.navigation.compose.rememberNavController
 import com.pahnupan.poc.agora.NavigateTelemedScreen
 import com.pahnupan.poc.agora.presentation.video.composable.LocalSurface
 import com.pahnupan.poc.agora.presentation.video.composable.RemoteSurface
+import io.agora.rtc.RtcEngine
+import io.agora.rtc.video.VideoCanvas
 import kotlinx.coroutines.flow.receiveAsFlow
 
 
@@ -55,6 +58,8 @@ internal fun TelemedRoute(
     val context = LocalContext.current
     val uiState = viewModel.uiState.collectAsStateWithLifecycle().value
     val event = viewModel.event.receiveAsFlow().collectAsState(TelemedEvent.Init).value
+    val localSurfaceView: SurfaceView = remember { RtcEngine.CreateRendererView(context) }
+    val remoteSurfaceView: SurfaceView = remember { RtcEngine.CreateRendererView(context) }
 
 
     LaunchedEffect(true) {
@@ -66,6 +71,12 @@ internal fun TelemedRoute(
             TelemedEvent.Init -> {
             }
 
+            is TelemedEvent.InitAgoraSuccess -> {
+                event.rtcEngine?.setupLocalVideo(
+                    VideoCanvas(localSurfaceView, VideoCanvas.RENDER_MODE_HIDDEN, 0)
+                )
+            }
+
             TelemedEvent.OnJoinError -> {
                 showToast(context, "join channel error")
             }
@@ -75,12 +86,16 @@ internal fun TelemedRoute(
             }
 
             is TelemedEvent.OnUserJoined -> {
+                event.rtcEngine?.setupRemoteVideo(
+                    VideoCanvas(remoteSurfaceView, VideoCanvas.RENDER_MODE_FIT, event.uid)
+                )
                 showToast(context, "user join to channel")
             }
 
             is TelemedEvent.OnUserOffline -> {
                 showToast(context, "user offline")
             }
+
         }
     }
 
@@ -96,8 +111,8 @@ internal fun TelemedRoute(
     }
 
     TelemedScreen(
-        localView = uiState.localSurfaceView,
-        remoteView = uiState.remoteSurfaceView,
+        localView = localSurfaceView,
+        remoteView = remoteSurfaceView,
         enableMic = uiState.enableMic,
         enableCam = uiState.enableCamera,
         onClickEnableMic = {
@@ -118,14 +133,12 @@ private fun showToast(context: Context, mess: String) {
 
 @Composable
 private fun TelemedScreen(
-    localView: SurfaceView? = null,
-    remoteView: SurfaceView? = null,
+    localView: SurfaceView,
+    remoteView: SurfaceView,
     uiState: TelemedUiState = TelemedUiState(
         enableCamera = false,
         enableMic = false,
-        localSurfaceView = null,
-        remoteSurfaceView = null,
-        localConnectionState = TelemedUiState.LocalConnectionState.OnNotJoining,
+        localConnectionState = TelemedUiState.LocalConnectionState.OnInit,
         remoteConnectionState = TelemedUiState.RemoteConnectionState.OnNotJoining
     ),
     enableMic: Boolean = true,
@@ -151,6 +164,7 @@ private fun TelemedScreen(
                     .fillMaxSize()
                     .align(alignment = Alignment.Center),
                 surfaceView = remoteView,
+                remoteState = uiState.remoteConnectionState
             )
             LocalSurface(
                 modifier = Modifier
@@ -159,7 +173,9 @@ private fun TelemedScreen(
                     .height(200.dp)
                     .padding(20.dp)
                     .align(alignment = Alignment.TopEnd),
-                surfaceView = localView
+                surfaceView = localView,
+                enableCamera = enableCam,
+                localState = uiState.localConnectionState
             )
 
             Row(
@@ -177,7 +193,11 @@ private fun TelemedScreen(
                         .size(48.dp)
                         .clip(CircleShape)
                         .background(color = Color.White),
-                    onClick = onClickEnableMic
+                    onClick = {
+                        if (uiState.localConnectionState is TelemedUiState.LocalConnectionState.OnJoined) {
+                            onClickEnableMic.invoke()
+                        }
+                    }
                 ) {
                     Icon(
                         modifier = Modifier.size(32.dp),
@@ -206,7 +226,11 @@ private fun TelemedScreen(
                         .size(48.dp)
                         .clip(CircleShape)
                         .background(color = Color.White),
-                    onClick = onClickEnableCam
+                    onClick = {
+                        if (uiState.localConnectionState is TelemedUiState.LocalConnectionState.OnJoined) {
+                            onClickEnableCam.invoke()
+                        }
+                    }
                 ) {
                     Icon(
                         modifier = Modifier.size(32.dp),
@@ -215,7 +239,6 @@ private fun TelemedScreen(
                         tint = Color.Black
                     )
                 }
-
             }
         }
     }
@@ -224,5 +247,8 @@ private fun TelemedScreen(
 @Preview
 @Composable
 private fun TelemedScreenPreview() {
-    TelemedScreen()
+    TelemedScreen(
+        localView = SurfaceView(LocalContext.current),
+        remoteView = SurfaceView(LocalContext.current),
+    )
 }

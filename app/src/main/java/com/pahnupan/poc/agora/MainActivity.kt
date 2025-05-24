@@ -30,7 +30,7 @@ data object NavigateHomeScreen
 data object NavigateListScreen
 
 @Serializable
-data class NavigateTelemedScreen(val isHost: Boolean, val chanelName: String)
+data class NavigateTelemedScreen(val chanelName: String)
 
 @AndroidEntryPoint
 class MainActivity : ComponentActivity() {

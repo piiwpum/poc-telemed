@@ -56,7 +56,7 @@ fun SelectRole(
         Text(
             modifier = Modifier
                 .weight(1f)
-                .clip(RoundedCornerShape(bottomStart = 16.dp, bottomEnd = 16.dp))
+                .clip(RoundedCornerShape(topEnd = 16.dp, bottomEnd = 16.dp))
                 .background(color = if (role == LoginUiState.Role.DOCTOR) PurpleGrey80 else Color.White)
                 .clickable { onSelect.invoke(LoginUiState.Role.DOCTOR) }
                 .padding(8.dp),

@@ -2,10 +2,10 @@ package com.pahnupan.poc.agora.presentation.list
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import androidx.lifecycle.viewmodel.compose.viewModel
 import com.pahnupan.poc.agora.data.helper.NetworkResult
 import com.pahnupan.poc.agora.domain.usecase.GetQueuesUseCase
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.collectLatest
@@ -20,7 +20,7 @@ class ListViewModel @Inject constructor(
 ) : ViewModel() {
 
     val uiState = MutableStateFlow<ListUiState>(ListUiState.Loading)
-    val intent = MutableSharedFlow<ListIntent>()
+    private val intent = MutableSharedFlow<ListIntent>()
 
     init {
         handleIntent()
@@ -30,13 +30,8 @@ class ListViewModel @Inject constructor(
         viewModelScope.launch {
             intent.collectLatest {
                 when (it) {
-                    ListIntent.Init -> {
-                        getQueues()
-                    }
-
-                    ListIntent.Refresh -> {
-                        getQueues()
-                    }
+                    ListIntent.Init -> getQueues()
+                    ListIntent.Refresh -> getQueues()
                 }
             }
         }
@@ -46,21 +41,24 @@ class ListViewModel @Inject constructor(
         viewModelScope.launch { intent.emit(action) }
     }
 
-    private suspend fun getQueues() {
-        getQueuesUseCase.invoke()
-            .onStart {
-                uiState.update { ListUiState.Loading }
-            }
-            .collectLatest { response ->
-                if (response is NetworkResult.Success) {
-                    if (response.data.isNotEmpty()) {
-                        uiState.update { ListUiState.Success(data = response.data) }
-                    } else {
-                        uiState.update { ListUiState.Empty }
-                    }
-                } else {
-                    uiState.update { ListUiState.Error }
+    private fun getQueues() {
+        viewModelScope.launch {
+            getQueuesUseCase.invoke()
+                .onStart {
+                    uiState.update { ListUiState.Loading }
+                    delay(500)
                 }
-            }
+                .collectLatest { response ->
+                    if (response is NetworkResult.Success) {
+                        if (response.data.isNotEmpty()) {
+                            uiState.update { ListUiState.Success(data = response.data) }
+                        } else {
+                            uiState.update { ListUiState.Empty }
+                        }
+                    } else {
+                        uiState.update { ListUiState.Error }
+                    }
+                }
+        }
     }
 }

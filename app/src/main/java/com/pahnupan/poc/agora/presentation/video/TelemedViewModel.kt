@@ -7,12 +7,13 @@ import androidx.lifecycle.viewModelScope
 import com.pahnupan.poc.agora.APP_ID
 import com.pahnupan.poc.agora.TAG
 import com.pahnupan.poc.agora.TOKEN
+import com.pahnupan.poc.agora.core.SharePref
+import com.pahnupan.poc.agora.presentation.login.LoginUiState
 import dagger.hilt.android.lifecycle.HiltViewModel
 import io.agora.rtc.Constants
 import io.agora.rtc.IRtcEngineEventHandler
 import io.agora.rtc.RtcEngine
 import io.agora.rtc.RtcEngineConfig
-import io.agora.rtc.video.VideoCanvas
 import io.agora.rtc.video.VideoEncoderConfiguration
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -21,13 +22,13 @@ import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import javax.inject.Inject
-import kotlin.random.Random
 
 @HiltViewModel
-class TelemedViewModel @Inject constructor() : ViewModel() {
+class TelemedViewModel @Inject constructor(
+    private val sharePref: SharePref
+) : ViewModel() {
     val test = 1
 
-    private val localUuid = Random.nextInt(1, 99999)
     private var remoteUuid = 0
 
     var rtcEngine: RtcEngine? = null
@@ -36,7 +37,7 @@ class TelemedViewModel @Inject constructor() : ViewModel() {
         TelemedUiState(
             enableCamera = false,
             enableMic = false,
-            localConnectionState = TelemedUiState.LocalConnectionState.OnNotJoining,
+            localConnectionState = TelemedUiState.LocalConnectionState.OnInit,
             remoteConnectionState = TelemedUiState.RemoteConnectionState.OnNotJoining,
         )
     )
@@ -47,14 +48,16 @@ class TelemedViewModel @Inject constructor() : ViewModel() {
     private val rtcEventHandler = object : IRtcEngineEventHandler() {
         override fun onJoinChannelSuccess(channel: String?, uid: Int, elapsed: Int) {
             Log.d(TAG, "channel:$channel,uid:$uid,elapsed:$elapsed")
-
             viewModelScope.launch {
+                uiState.update {
+                    it.copy(localConnectionState = TelemedUiState.LocalConnectionState.OnJoined)
+                }
                 event.send(TelemedEvent.OnJoined(uid))
             }
         }
 
         override fun onError(err: Int) {
-            Log.d(TAG, "error ${err}")
+            Log.d(TAG, "onError $err")
             super.onError(err)
             viewModelScope.launch {
                 event.send(TelemedEvent.OnJoinError)
@@ -62,25 +65,19 @@ class TelemedViewModel @Inject constructor() : ViewModel() {
         }
 
         override fun onUserJoined(uid: Int, elapsed: Int) {
-            Log.d(TAG, "onUserJoined:$uid")
             super.onUserJoined(uid, elapsed)
-
-            rtcEngine?.setupRemoteVideo(
-                VideoCanvas(uiState.value.remoteSurfaceView, VideoCanvas.RENDER_MODE_FIT, uid)
-            )
+            Log.d(TAG, "onUserJoined:$uid")
             viewModelScope.launch {
-                event.send(TelemedEvent.OnUserJoined(uid))
+                event.send(TelemedEvent.OnUserJoined(rtcEngine, uid))
+                uiState.update { it.copy(remoteConnectionState = TelemedUiState.RemoteConnectionState.OnStable) }
             }
         }
 
         override fun onUserOffline(uid: Int, reason: Int) {
             Log.d(TAG, "onUserOffline:${uid}")
-//            if (uid == remoteUid) {
-//                remoteView = null
-//            }
             viewModelScope.launch {
                 event.send(TelemedEvent.OnUserOffline(uid))
-//                uiState.update { it.copy(remoteSurfaceView = null) }
+                uiState.update { it.copy(remoteConnectionState = TelemedUiState.RemoteConnectionState.OnExit) }
             }
             super.onUserOffline(uid, reason)
         }
@@ -134,7 +131,10 @@ class TelemedViewModel @Inject constructor() : ViewModel() {
                     TelemedIntent.Init -> {}
 
                     is TelemedIntent.InitAgora -> {
-                        onInitRtcEngine(context = it.context, isHost = it.bundle.isHost)
+                        onInitRtcEngine(
+                            context = it.context,
+                            isHost = sharePref.role == LoginUiState.Role.DOCTOR.name
+                        )
                     }
 
                     TelemedIntent.ToggleCamera -> onToggleCamera()
@@ -151,13 +151,6 @@ class TelemedViewModel @Inject constructor() : ViewModel() {
     }
 
     private fun onInitRtcEngine(context: Context, isHost: Boolean) {
-        uiState.update {
-            it.copy(
-                localSurfaceView = RtcEngine.CreateRendererView(context),
-                remoteSurfaceView = RtcEngine.CreateRendererView(context)
-            )
-        }
-
         RtcEngineConfig().apply {
             mContext = context
             mAppId = APP_ID
@@ -182,27 +175,23 @@ class TelemedViewModel @Inject constructor() : ViewModel() {
         } else {
             rtcEngine?.setClientRole(Constants.CLIENT_ROLE_AUDIENCE)
         }
-        rtcEngine?.setupLocalVideo(
-            VideoCanvas(
-                uiState.value.localSurfaceView,
-                VideoCanvas.RENDER_MODE_HIDDEN,
-                0
-            )
-        )
-        rtcEngine?.startPreview()
-        rtcEngine?.joinChannel(TOKEN, "test_telemed", "", localUuid)
+        viewModelScope.launch {
+            event.send(TelemedEvent.InitAgoraSuccess(rtcEngine))
+            rtcEngine?.startPreview()
+            rtcEngine?.joinChannel(TOKEN, "test_telemed", "", sharePref.uid ?: 0)
+        }
     }
 
     private fun onToggleCamera() {
         val current = uiState.value.enableCamera
-        rtcEngine?.muteLocalVideoStream(!current)
+        rtcEngine?.muteLocalVideoStream(current)
         uiState.update { it.copy(enableCamera = !current) }
 
     }
 
     private fun onToggleMic() {
         val current = uiState.value.enableMic
-        rtcEngine?.muteLocalAudioStream(!current)
+        rtcEngine?.muteLocalAudioStream(current)
         uiState.update { it.copy(enableMic = !current) }
     }
 
@@ -210,7 +199,7 @@ class TelemedViewModel @Inject constructor() : ViewModel() {
         rtcEngine?.switchCamera()
     }
 
-    fun leaveChannel() {
+    private fun leaveChannel() {
         rtcEngine?.leaveChannel()
         rtcEngine?.stopPreview()
         RtcEngine.destroy()

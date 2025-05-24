@@ -32,15 +32,16 @@ internal fun ItemQueue(
     Row(
         modifier = modifier
             .background(color = Color.White)
-            .shadow(
-                elevation = 2.dp,
-                shape = RoundedCornerShape(8.dp),
-                ambientColor = Color.LightGray,
-                spotColor = Color.LightGray
-            )
             .clickable {
                 onClickItem.invoke()
             }
+            .shadow(
+                elevation = 2.dp,
+                shape = RoundedCornerShape(8.dp),
+                ambientColor = Color.LightGray.copy(alpha = 0.5f),
+                spotColor = Color.LightGray.copy(alpha = 0.5f)
+            )
+
             .padding(16.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(16.dp)
@@ -65,7 +66,7 @@ internal fun ItemQueue(
 
 @Preview
 @Composable
-internal fun ItemQueuePreview() {
+private fun ItemQueuePreview() {
     Column(
         modifier = Modifier.background(color = Color.White),
         verticalArrangement = Arrangement.spacedBy(8.dp)
